@@ -58,61 +58,52 @@ export const fetchEntries = async (): Promise<DiaryEntry[]> => {
         sorts: [{ property: '日付', direction: 'descending' }],
       }),
     });
-
+    
     if (!response.ok) {
       const error = await response.json();
       console.error('Error:', error);
-      return [];
+      return[];
     }
-
+    
     const data = await response.json();
     console.log('Notion Data:', data);
-    return data.results.map(notionToEntry);
+    // const response = await notionClient.databases.query({
+    //   database_id: env.VITE_NOTION_DATABASE_ID,
+    //   sorts: [{ property: '日付', direction: 'descending' }],
+    // });
+    // console.log('Fetched entries:', response.results);
+
+    // return response.results.map(notionToEntry);
   } catch (error) {
     handleError('fetch entries', error);
-    return [];
-  }
+  }return [];
 };
 
 // --- 新しい日記エントリを作成 ---
 export const createEntry = async (entry: Omit<DiaryEntry, 'id'>): Promise<DiaryEntry | null> => {
   try {
-    const response = await fetch('/api/notion-proxy', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'create',
-        parent: { database_id: env.VITE_NOTION_DATABASE_ID },
-        properties: {
-          タイトル: {
-            title: entry.title ? [{ text: { content: entry.title } }] : [],
-          },
-          内容: {
-            rich_text: [{ text: { content: entry.content } }],
-          },
-          日付: {
-            date: { start: entry.date.toISOString().split('T')[0] },
-          },
-          気分タグ: {
-            multi_select: entry.mood ? [{ name: entry.mood }] : [],
-          },
+    const response = await notionClient.pages.create({
+      parent: { database_id: env.VITE_NOTION_DATABASE_ID },
+      properties: {
+        タイトル: {
+          title: entry.title ? [{ text: { content: entry.title } }] : [],
         },
-      }),
+        内容: {
+          rich_text: [{ text: { content: entry.content } }],
+        },
+        日付: {
+          date: { start: entry.date.toISOString().split('T')[0] },
+        },
+        気分タグ: {
+          multi_select: entry.mood ? [{ name: entry.mood }] : [],
+        },
+      },
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Error creating entry:', error);
-      return null;
-    }
-
-    const data = await response.json();
-    return notionToEntry(data);
+    return notionToEntry(response);
   } catch (error) {
     handleError('create entry', error);
-    return null;
+    return null; // エラー時に null を返す
   }
 };
 
@@ -122,59 +113,33 @@ export const updateEntry = async (
   entry: Partial<Omit<DiaryEntry, 'id'>>
 ): Promise<DiaryEntry | null> => {
   try {
-    const response = await fetch('/api/notion-proxy', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+    const response = await notionClient.pages.update({
+      page_id: id,
+      properties: {
+        ...(entry.title && { タイトル: { title: [{ text: { content: entry.title } }] } }),
+        ...(entry.content && { 内容: { rich_text: [{ text: { content: entry.content } }] } }),
+        ...(entry.date && { 日付: { date: { start: entry.date.toISOString().split('T')[0] } } }),
+        ...(entry.mood && { 気分タグ: { multi_select: [{ name: entry.mood }] } }),
       },
-      body: JSON.stringify({
-        action: 'update',
-        page_id: id,
-        properties: {
-          ...(entry.title && { タイトル: { title: [{ text: { content: entry.title } }] } }),
-          ...(entry.content && { 内容: { rich_text: [{ text: { content: entry.content } }] } }),
-          ...(entry.date && { 日付: { date: { start: entry.date.toISOString().split('T')[0] } } }),
-          ...(entry.mood && { 気分タグ: { multi_select: [{ name: entry.mood }] } }),
-        },
-      }),
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Error updating entry:', error);
-      return null;
-    }
-
-    const data = await response.json();
-    return notionToEntry(data);
+    return notionToEntry(response);
   } catch (error) {
     handleError('update entry', error);
-    return null;
+    return null; // エラー時に null を返す
   }
 };
 
 // --- 日記エントリを削除 (アーカイブ) ---
 export const deleteEntry = async (id: string): Promise<void> => {
   try {
-    const response = await fetch('/api/notion-proxy', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        action: 'delete',
-        page_id: id,
-      }),
+    await notionClient.pages.update({
+      page_id: id,
+      archived: true,
     });
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Error deleting entry:', error);
-      return;
-    }
-
-    console.log(`Entry with ID ${id} successfully deleted.`);
   } catch (error) {
     handleError('delete entry', error);
+  } finally {
+    return;
   }
 };
